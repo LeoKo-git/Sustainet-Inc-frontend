@@ -1,0 +1,1 @@
+web: cd server/Sustainet-Inc.-main && python3 main.py 
