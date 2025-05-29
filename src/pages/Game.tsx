@@ -1172,75 +1172,32 @@ export default function Game() {
             >
               {isPolishing ? 'AI潤飾中...' : 'AI潤飾'}
             </button>
-            <div style={{ display: 'flex', gap: 16, width: '100%', justifyContent: 'center', marginTop: 16 }}>
-              <motion.button
-                whileHover={{ scale: 1.08 }}
-                whileTap={{ scale: 0.95 }}
-                style={{
-                  width: 120,
-                  height: 40,
-                  background: '#2196f3',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: 8,
-                  fontSize: 20,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  textAlign: 'center',
-                  fontWeight: 600
-                }}
-                onClick={() => {
-                  setShowConfirmModal(false);
-                  setTimeout(() => handleSubmit(showInput!), 0);
-                }}
-              >
-                發佈
-              </motion.button>
-              <motion.button
-                whileHover={{ scale: 1.08 }}
-                whileTap={{ scale: 0.95 }}
-                style={{
-                  width: 120,
-                  height: 40,
-                  background: '#bbb',
-                  color: '#222',
-                  border: 'none',
-                  borderRadius: 8,
-                  fontSize: 20,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  textAlign: 'center',
-                }}
-                onClick={() => {
-                  setShowInput(null);
-                  setForm({ title: '', link: '', content: '', style: '' });
-                }}
-              >
-                取消
-              </motion.button>
-                </div>
-            {/* AI潤飾風格輸入 Modal */}
             {showPolishStyleInput && (
               <div style={{
-                position: 'fixed', left: 0, top: 0, width: '100vw', height: '100vh',
-                background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center'
+                position: 'absolute',
+                left: '50%',
+                top: '50%',
+                transform: 'translate(-50%, -50%)',
+                zIndex: 9999,
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'center',
+                pointerEvents: 'auto',
               }}>
                 <div style={{
-                  background: '#222', borderRadius: 12, padding: 32, minWidth: 340, color: '#fff', boxShadow: '0 2px 16px #0008'
+                  background: '#222', borderRadius: 12, padding: 32, minWidth: 340, color: '#fff', boxShadow: '0 2px 16px #0008',
+                  position: 'relative', left: 180, top: -120
                 }}>
-                  <div style={{ fontWeight: 700, marginBottom: 12 }}>你想要的風格</div>
+                  <div style={{ fontWeight: 700, marginBottom: 12 }}>描述你想要的風格</div>
                   <input
                     type="text"
                     value={polishStyle}
                     onChange={e => setPolishStyle(e.target.value)}
-                    placeholder="例如：像金庸一樣撰寫"
+                    placeholder="例如：正式、幽默、簡潔、..."
                     style={{
-                      width: '100%', fontSize: 16, padding: '10px 14px', borderRadius: 8,
-                      border: '1px solid #fff', marginBottom: 16, color: '#fff', background: 'rgba(255,255,255,0.1)'
+                      width: 280, fontSize: 16, padding: '10px 14px', borderRadius: 8,
+                      border: '1px solid #fff', marginBottom: 16, color: '#fff', background: 'rgba(255,255,255,0.1)',
+                      display: 'block', marginLeft: 'auto', marginRight: 'auto'
                     }}
                   />
                   <div style={{ display: 'flex', gap: 16, justifyContent: 'center' }}>
