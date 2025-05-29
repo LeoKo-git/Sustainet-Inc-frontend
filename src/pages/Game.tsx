@@ -14,6 +14,7 @@ export default function Game() {
     gameOver,
     setPhase,
     submitTool,
+    setGameOver,
   } = useRoundFlow(5);
 
   const { gameState, setGameState } = useGame();
@@ -32,7 +33,7 @@ export default function Game() {
   const [isMuted, setIsMuted] = useState(false);
   const [isActionLoading, setIsActionLoading] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [form, setForm] = useState({ title: '', link: '', content: '' });
+  const [form, setForm] = useState({ title: '', link: '', content: '', style: '' });
   const [showIgnoreConfirm, setShowIgnoreConfirm] = useState(false);
   const hasInitialized = useRef(false);  // 新增 ref 來追蹤是否已經初始化
 
@@ -48,6 +49,24 @@ export default function Game() {
 
   // loadingType: 'player' | 'ai' | null
   const [loadingType, setLoadingType] = useState<null | 'player' | 'ai'>(null);
+
+  // 新增：AI潤飾 loading 狀態
+  const [isPolishing, setIsPolishing] = useState(false);
+
+  const [showSettings, setShowSettings] = useState(false);
+  const [volume, setVolume] = useState(0.5); // 初始音量
+
+  const [roundHistory, setRoundHistory] = useState<any[]>([]);
+  const [showDashboard, setShowDashboard] = useState(false);
+
+  const [showPlayerResult, setShowPlayerResult] = useState(false);
+  const [playerResultData, setPlayerResultData] = useState<any>(null);
+  const [aiActionPending, setAiActionPending] = useState(false);
+
+  const [showPolishStyleInput, setShowPolishStyleInput] = useState(false);
+  const [polishStyle, setPolishStyle] = useState('');
+
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   useEffect(() => {
     const updateScale = () => {
@@ -95,8 +114,9 @@ export default function Game() {
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.muted = isMuted;
+      audioRef.current.volume = volume;
     }
-  }, [isMuted]);
+  }, [isMuted, volume]);
 
   // 玩家輸入欄位
   const [title, setTitle] = useState('');
@@ -159,7 +179,7 @@ export default function Game() {
   // 工具列
   const tools = gameState?.tool_list || [];
   // 社群反應
-  const logs = gameState?.dashboard_info?.current_round?.social_reactions || [];
+  const logs = gameState?.simulated_comments || [];
 
   // 計算所有平台信任值加總
   const playerTotalTrust = platforms.reduce((sum, p) => sum + (p.player_trust ?? 0), 0);
@@ -168,14 +188,14 @@ export default function Game() {
   // 載入中狀態
   const isLoading = !gameState || !gameState.article;
 
-  // 串接後端 API：送出澄清/附和
+  // 串接後端 API：送出澄清/附和/忽略
   const handleSubmit = async (actionType: 'clarify' | 'agree' | 'ignore') => {
     if (actionType !== 'ignore') {
       if (!form.title.trim() || !form.content.trim()) {
         alert('請填寫標題和內容');
         return;
       }
-      if (!selectedPlatform) {
+      if (!selectedPlatform || !String(selectedPlatform).trim()) {
         alert('請選擇平台');
         return;
       }
@@ -184,47 +204,39 @@ export default function Game() {
       alert('遊戲狀態異常，請重新整理頁面');
       return;
     }
-    
     setIsActionLoading(true);
     setLoadingType('player');
     try {
-      // 送出前先記錄舊的信任值
-      const prevPlatforms = (gameState?.platform_status || []).map((p: any) => ({
-        platform_name: p.platform_name,
-        player_trust: p.player_trust,
-        ai_trust: p.ai_trust,
-      }));
-
       let payload: any;
       if (actionType === 'ignore') {
         payload = {
-          session_id: gameState.session_id,
-          round_number: gameState.round_number,
+          session_id: String(gameState.session_id),
+          round_number: String(gameState.round_number),
           action_type: 'ignore',
           article: {
-            title: gameState.article?.title || '',
-            content: gameState.article?.content || '',
-            author: gameState.article?.author || '',
-            published_date: gameState.article?.published_date || '',
-            target_platform: gameState.article?.target_platform || '',
+            title: String(gameState.article?.title ?? ''),
+            content: String(gameState.article?.content ?? ''),
+            author: String(gameState.article?.author ?? ''),
+            published_date: String(gameState.article?.published_date ?? ''),
+            target_platform: String(gameState.article?.target_platform ?? ''),
           }
         };
     } else {
         payload = {
-          session_id: gameState.session_id,
-          round_number: gameState.round_number,
+          session_id: String(gameState.session_id),
+          round_number: String(gameState.round_number),
           action_type: actionType,
           article: {
-            title: form.title,
-            content: form.content,
+            title: String(form.title ?? ''),
+            content: String(form.content ?? ''),
             author: '玩家',
-            published_date: new Date().toISOString(),
-            target_platform: selectedPlatform,
+            published_date: String(new Date().toISOString()),
+            target_platform: String(selectedPlatform ?? ''),
           },
-          tool_used: selectedTool ? [{ tool_name: selectedTool }] : [],
+          tool_used: selectedTool ? [{ tool_name: String(selectedTool) }] : [],
         };
       }
-      console.log('Sending payload:', payload);
+      console.log('Sending payload:', JSON.stringify(payload, null, 2));
       const res = await fetch('https://sustainet-net.up.railway.app/api/games/player-turn', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -240,16 +252,21 @@ export default function Game() {
       }
       const data = await res.json();
       console.log('Player turn response:', data);
-      
-      // 先更新遊戲狀態
       setGameState(data);
       setShowInput(null);
-      setForm({ title: '', link: '', content: '' });
+      setForm({ title: '', link: '', content: '', style: '' });
       setSelectedTool(null);
-      
-      // 計算信任值變化（玩家行動）
-      if (data.platform_status && prevPlatforms.length) {
-        const diff = data.platform_status.map((p: any) => {
+      setIsActionLoading(false);
+      setLoadingType(null);
+      // 計算信任值變化
+      let trustDiff = null;
+      if (data.platform_status) {
+        const prevPlatforms = (gameState?.platform_status || []).map((p: any) => ({
+          platform_name: p.platform_name,
+          player_trust: p.player_trust,
+          ai_trust: p.ai_trust,
+        }));
+        trustDiff = data.platform_status.map((p: any) => {
           const prev = prevPlatforms.find((x: any) => x.platform_name === p.platform_name);
           return {
             platform: p.platform_name,
@@ -257,69 +274,29 @@ export default function Game() {
             ai: prev ? p.ai_trust - prev.ai_trust : 0,
           };
         });
-        setPlayerActionTrustDiff(diff);
-        if (playerDiffTimeout.current) clearTimeout(playerDiffTimeout.current);
-        playerDiffTimeout.current = window.setTimeout(() => setPlayerActionTrustDiff(null), 8000);
       }
-      
-      // 等待狀態更新完成後再進入下一回合
-      setTimeout(async () => {
-        try {
-          setLoadingType('ai'); // 進入 AI 行動 loading
-          // 先等待 AI 行動
-          const aiActionPayload = {
-            session_id: data.session_id,
-            round_number: data.round_number
-          };
-          console.log('Waiting for AI action...');
-          const aiActionRes = await fetch('https://sustainet-net.up.railway.app/api/games/ai-turn', {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              'Accept': 'application/json'
-            },
-            body: JSON.stringify(aiActionPayload),
-          });
-          
-          if (!aiActionRes.ok) {
-            const errorText = await aiActionRes.text();
-            console.error('AI action error:', aiActionRes.status, aiActionRes.statusText, errorText);
-            alert('等待 AI 行動失敗');
-            setIsActionLoading(false);
-            setLoadingType(null);
-            return;
-          }
-          
-          const aiActionData = await aiActionRes.json();
-          console.log('AI action response:', aiActionData);
-          
-          // 進入下一回合，先清除上一回合 AI 影響提示，延後 setGameState 直到 loading 結束
-          setTimeout(() => {
-            setPlayerActionTrustDiff(null);
-            setAiActionTrustDiff(null);
-            setGameState(aiActionData); // 只在 next-round 回傳後才切換畫面
-            setIsActionLoading(false);
-            setLoadingType(null);
-            // 新回合畫面顯示後再顯示 AI 行動造成的影響（不自動消失）
-            if (aiActionData && aiActionData.platform_status && prevPlatforms.length) {
-              const diff = aiActionData.platform_status.map((p: any) => {
-                const prev = prevPlatforms.find((x: any) => x.platform_name === p.platform_name);
-                return {
-                  platform: p.platform_name,
-                  player: prev ? p.player_trust - prev.player_trust : 0,
-                  ai: prev ? p.ai_trust - prev.ai_trust : 0,
-                };
-              });
-              setAiActionTrustDiff(diff);
-            }
-          }, 500);
-        } catch (err) {
-          console.error('Round transition error:', err);
-          alert('回合轉換失敗，請稍後再試');
-          setIsActionLoading(false);
-          setLoadingType(null);
+      setPlayerResultData({
+        trustDiff,
+        reachCount: data.reach_count ?? 0,
+      });
+      setShowPlayerResult(true);
+      // 前端記錄玩家行動
+      setRoundHistory(prev => [
+        ...prev,
+        {
+          round_number: data.round_number,
+          actor: 'player',
+          player_action: actionType,
+          player_content: data.article?.content || '',
+          news_title: data.article?.title || '',
+          reach_count: data.reach_count ?? 0,
+          platform_trust: data.platform_status?.map((p: any) => ({
+            platform: p.platform_name,
+            player_trust: p.player_trust,
+            ai_trust: p.ai_trust
+          })) || [],
         }
-      }, 1000);
+      ]);
     } catch (err) {
       console.error('Network Error:', err);
       alert('網路錯誤，請稍後再試');
@@ -328,6 +305,204 @@ export default function Game() {
     }
   };
 
+  // 進入下一回合
+  const handleNextRound = async () => {
+    if (!gameState?.session_id || !gameState?.round_number) {
+      alert('遊戲狀態異常，請重新整理頁面');
+      return;
+    }
+    setIsActionLoading(true);
+    setLoadingType('ai');
+    try {
+      const payload = {
+        session_id: String(gameState.session_id),
+        round_number: String(gameState.round_number + 1)
+      };
+      console.log('Sending next round payload:', payload);
+      const res = await fetch('https://sustainet-net.up.railway.app/api/games/next-round', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('Next round API error:', res.status, res.statusText, errorText);
+        alert('進入下一回合失敗');
+        setIsActionLoading(false);
+        setLoadingType(null);
+        return;
+      }
+      const nextRoundData = await res.json();
+      console.log('Next round response:', nextRoundData);
+      
+      // 顯示 AI 行動影響
+      if (nextRoundData.platform_status) {
+        const prevPlatforms = (gameState?.platform_status || []).map((p: any) => ({
+          platform_name: p.platform_name,
+          player_trust: p.player_trust,
+          ai_trust: p.ai_trust,
+        }));
+        const diff = nextRoundData.platform_status.map((p: any) => {
+          const prev = prevPlatforms.find((x: any) => x.platform_name === p.platform_name);
+          return {
+            platform: p.platform_name,
+            player: prev ? p.player_trust - prev.player_trust : 0,
+            ai: prev ? p.ai_trust - prev.ai_trust : 0,
+          };
+        });
+        setAiActionTrustDiff(diff);
+        if (aiDiffTimeout.current) clearTimeout(aiDiffTimeout.current);
+        aiDiffTimeout.current = window.setTimeout(() => setAiActionTrustDiff(null), 8000);
+      }
+      
+      setGameState(nextRoundData);
+      setIsActionLoading(false);
+      setLoadingType(null);
+
+      // 新增：每進入新回合就 push 一筆 AI 行動到 roundHistory
+      setRoundHistory(prev => [
+        ...prev,
+        {
+          round_number: nextRoundData.round_number,
+          actor: 'ai',
+          ai_action: nextRoundData.article?.content || '',
+          news_title: nextRoundData.article?.title || '',
+          reach_count: nextRoundData.reach_count ?? 0,
+          platform_trust: nextRoundData.platform_status?.map((p: any) => ({
+            platform: p.platform_name,
+            player_trust: p.player_trust,
+            ai_trust: p.ai_trust
+          })) || [],
+        }
+      ]);
+    } catch (err) {
+      console.error('Next round error:', err);
+      alert('回合轉換失敗，請稍後再試');
+      setIsActionLoading(false);
+      setLoadingType(null);
+    }
+  };
+
+  // 修改 handleNextRoundAsync，接收上一回合資料，正確計算 round_number
+  const handleNextRoundAsync = async (prevRoundData?: any) => {
+    setIsActionLoading(true);
+    setLoadingType('ai');
+    const baseState = prevRoundData || gameState;
+    if (!baseState?.session_id || !baseState?.round_number) {
+      alert('遊戲狀態異常，請重新整理頁面');
+      setAiActionPending(false);
+      setIsActionLoading(false);
+      setLoadingType(null);
+      return;
+    }
+    try {
+      const payload = {
+        session_id: String(baseState.session_id),
+        round_number: String(Number(baseState.round_number) + 1)
+      };
+      console.log('Next round payload:', JSON.stringify(payload, null, 2));
+      const res = await fetch('https://sustainet-net.up.railway.app/api/games/next-round', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('Next round API error:', res.status, res.statusText, errorText);
+        alert('進入下一回合失敗');
+        setAiActionPending(false);
+        setIsActionLoading(false);
+        setLoadingType(null);
+        return;
+      }
+      const nextRoundData = await res.json();
+      setGameState(nextRoundData);
+      setAiActionPending(false);
+      // 新增：每進入新回合就 push 一筆 AI 行動到 roundHistory
+      setRoundHistory(prev => [
+        ...prev,
+        {
+          round_number: nextRoundData.round_number,
+          actor: 'ai',
+          ai_action: nextRoundData.article?.content || '',
+          news_title: nextRoundData.article?.title || '',
+          reach_count: nextRoundData.reach_count ?? 0,
+          platform_trust: nextRoundData.platform_status?.map((p: any) => ({
+            platform: p.platform_name,
+            player_trust: p.player_trust,
+            ai_trust: p.ai_trust
+          })) || [],
+        }
+      ]);
+    } catch (err) {
+      alert('回合轉換失敗，請稍後再試');
+      setAiActionPending(false);
+    } finally {
+      setIsActionLoading(false);
+      setLoadingType(null);
+    }
+  };
+
+  // 新增：AI潤飾功能
+  const handlePolishContent = async (styleOverride?: string) => {
+    if (!form.content.trim()) {
+      alert('請先輸入要潤飾的新聞內容');
+      return;
+    }
+    if (!gameState?.session_id) {
+      alert('遊戲狀態異常，請重新整理頁面');
+      return;
+    }
+    if (!selectedPlatform) {
+      alert('請先選擇平台');
+      return;
+    }
+    setIsPolishing(true);
+    try {
+      const res = await fetch('https://sustainet-net.up.railway.app/api/games/polish-news', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: gameState.session_id,
+          content: form.content,
+          requirements: styleOverride || form.style || '讓內容更吸引人、易讀、具說服力',
+          platform: selectedPlatform
+        })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        alert(err?.message || 'AI潤飾失敗');
+        setIsPolishing(false);
+        return;
+      }
+      const data = await res.json();
+      setForm(f => ({ ...f, content: data.polished_content || f.content }));
+    } catch (e) {
+      alert('AI潤飾過程發生錯誤');
+    } finally {
+      setIsPolishing(false);
+    }
+  };
+
+  useEffect(() => {
+    if (gameState && roundHistory.length === 0 && gameState.platform_status) {
+      setRoundHistory([
+        {
+          round_number: gameState.round_number,
+          actor: 'ai',
+          ai_action: gameState.article?.content || '',
+          news_title: gameState.article?.title || '',
+          reach_count: gameState.reach_count ?? 0,
+          platform_trust: gameState.platform_status.map((p: any) => ({
+            platform: p.platform_name,
+            player_trust: p.player_trust,
+            ai_trust: p.ai_trust
+          })),
+        }
+      ]);
+    }
+  }, [gameState]);
+
   if (gameOver) {
     return (
       <div className="text-white h-screen flex flex-col items-center justify-center space-y-6 animate-fade-in">
@@ -335,7 +510,7 @@ export default function Game() {
           <h2 className="text-3xl font-bold mb-4">🎉 遊戲結束！</h2>
           <div className="space-y-2">
             <p className="text-lg">你的最終信任值：<span className="text-blue-400 font-semibold">{playerScore}</span></p>
-            <p className="text-lg">AI 最終信任值：<span className="text-blue-400 font-semibold">{agentScore}</span></p>
+            <p className="text-lg">Inforia Labs 最終信任值：<span className="text-blue-400 font-semibold">{agentScore}</span></p>
           </div>
         </div>
       </div>
@@ -408,8 +583,8 @@ export default function Game() {
               playsInline
               style={{ width: 360, height: 360, objectFit: 'contain', background: 'transparent' }}
             />
-          </div>
         </div>
+      </div>
       </div>
     );
   }
@@ -488,14 +663,14 @@ export default function Game() {
           }}
         >
           第 {roundNumber} 回合
-      </div>
+            </div>
 
         {/* 左側社群反應 */}
         <div
           style={{
             position: 'absolute',
             left: 32,
-            top: 220,
+            top: 138,
             width: 220,
             zIndex: 20,
             background: 'rgba(0,0,0,0.5)',
@@ -524,7 +699,7 @@ export default function Game() {
               }}
             >
               {log}
-            </div>
+          </div>
           ))}
         </div>
 
@@ -556,7 +731,7 @@ export default function Game() {
               <div style={{ display: 'flex', fontWeight: 600, borderBottom: '1px solid #fff2', paddingBottom: 4, marginBottom: 4 }}>
                 <div style={{ width: 100 }}>平台</div>
                 <div style={{ width: 60, textAlign: 'center' }}>你</div>
-                <div style={{ width: 60, textAlign: 'center' }}>AI</div>
+                <div style={{ width: 60, textAlign: 'center' }}>Inforia Labs</div>
               </div>
               {platforms.map((p, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'center', fontSize: 16 }}>
@@ -564,68 +739,13 @@ export default function Game() {
                   <div style={{ width: 60, textAlign: 'center' }}>{p.player_trust}</div>
                   <div style={{ width: 60, textAlign: 'center' }}>{p.ai_trust}</div>
                 </div>
-              ))}
-            </div>
-            {/* 顯示玩家行動與 AI 行動造成的信任值變化 */}
-            {playerActionTrustDiff && (
-              <div style={{
-                marginTop: 12,
-                background: 'rgba(0,123,255,0.12)',
-                borderRadius: 8,
-                padding: '10px 12px',
-                fontSize: 15,
-                color: '#90caf9',
-                fontWeight: 600,
-                boxShadow: '0 2px 8px rgba(0,0,0,0.10)',
-                transition: 'opacity 0.3s',
-                pointerEvents: 'none',
-              }}>
-                <div style={{ fontWeight: 700, color: '#fff', marginBottom: 4 }}>你這回合行動的影響</div>
-                {playerActionTrustDiff.map((d, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <span style={{ width: 90, display: 'inline-block', color: '#fff' }}>{d.platform}：</span>
-                    <span style={{ color: d.player > 0 ? '#4caf50' : d.player < 0 ? '#e57373' : '#fff' }}>
-                      你 {d.player > 0 ? `+${d.player}` : d.player}
-                    </span>
-                    <span style={{ color: d.ai > 0 ? '#4caf50' : d.ai < 0 ? '#e57373' : '#fff', marginLeft: 8 }}>
-                      AI {d.ai > 0 ? `+${d.ai}` : d.ai}
-                    </span>
-                  </div>
                 ))}
               </div>
-            )}
-            {aiActionTrustDiff && (
-              <div style={{
-                marginTop: 12,
-                background: 'rgba(255,193,7,0.12)',
-                borderRadius: 8,
-                padding: '10px 12px',
-                fontSize: 15,
-                color: '#ffb300',
-                fontWeight: 600,
-                boxShadow: '0 2px 8px rgba(0,0,0,0.10)',
-                transition: 'opacity 0.3s',
-                pointerEvents: 'none',
-              }}>
-                <div style={{ fontWeight: 700, color: '#fff', marginBottom: 4 }}>AI 行動造成的影響</div>
-                {aiActionTrustDiff.map((d, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <span style={{ width: 90, display: 'inline-block', color: '#fff' }}>{d.platform}：</span>
-                    <span style={{ color: d.player > 0 ? '#4caf50' : d.player < 0 ? '#e57373' : '#fff' }}>
-                      你 {d.player > 0 ? `+${d.player}` : d.player}
-                    </span>
-                    <span style={{ color: d.ai > 0 ? '#4caf50' : d.ai < 0 ? '#e57373' : '#fff', marginLeft: 8 }}>
-                      AI {d.ai > 0 ? `+${d.ai}` : d.ai}
-                    </span>
-                  </div>
-                ))}
             </div>
-            )}
           </div>
-        </div>
-        {/* 左下角音樂控制按鈕 */}
-        <button
-          onClick={() => setIsMuted((prev) => !prev)}
+        {/* 左下角設定按鈕 */}
+                  <button
+          onClick={() => setShowSettings(true)}
           style={{
             position: 'absolute',
             left: 32,
@@ -643,10 +763,103 @@ export default function Game() {
             color: '#fff',
             fontSize: 28,
           }}
-          title={isMuted ? '取消靜音' : '靜音'}
+          title="設定"
         >
-          {isMuted ? '🔇' : '🔊'}
+          ⚙️
+                  </button>
+        {/* 左下角 Dashboard 按鈕 */}
+        <button
+          onClick={() => setShowDashboard(true)}
+          style={{
+            position: 'absolute',
+            left: 133,
+            bottom: 32,
+            zIndex: 20,
+            background: 'rgba(0,0,0,0.5)',
+            border: 'none',
+            borderRadius: '50%',
+            width: 48,
+            height: 48,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            color: '#fff',
+            fontSize: 28,
+          }}
+          title="Dashboard"
+        >
+          📊
         </button>
+        {/* 設定面板 */}
+        {showSettings && (
+          <div
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+              background: 'rgba(30,30,40,0.98)',
+              borderRadius: 16,
+              zIndex: 2000,
+              padding: 32,
+              minWidth: 400,
+              minHeight: 180,
+              color: '#fff',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+            }}
+          >
+            <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 24 }}>設定</div>
+            {/* 音量控制 */}
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ marginBottom: 8 }}>音量</div>
+                  <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={volume}
+                onChange={e => {
+                  const v = Number(e.target.value);
+                  setVolume(v);
+                }}
+                style={{ width: 200 }}
+              />
+              <span style={{ marginLeft: 12 }}>{Math.round(volume * 100)}%</span>
+                  <button
+                onClick={() => setIsMuted(m => !m)}
+                style={{
+                  marginLeft: 24,
+                  background: 'none',
+                  border: '1px solid #fff',
+                  borderRadius: 6,
+                  color: '#fff',
+                  padding: '4px 12px',
+                  cursor: 'pointer',
+                }}
+              >
+                {isMuted ? '取消靜音' : '靜音'}
+                  </button>
+              </div>
+            <button
+              onClick={() => setShowSettings(false)}
+              style={{
+                marginTop: 24,
+                background: '#2196f3',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                padding: '10px 24px',
+                fontSize: 18,
+                fontWeight: 600,
+                cursor: 'pointer',
+                width: '100%'
+              }}
+            >
+              關閉
+            </button>
+            </div>
+        )}
         {/* 右下角工具列 */}
         <div
           style={{
@@ -715,7 +928,7 @@ export default function Game() {
                   <div style={{ marginBottom: 6 }}>{tool.description}</div>
                   <div style={{ fontSize: 14, color: '#90caf9' }}>
                     信任值效果：{tool.trust_effect}，擴散效果：{tool.spread_effect}
-                  </div>
+          </div>
                 </div>
               )}
             </button>
@@ -809,7 +1022,7 @@ export default function Game() {
               width: 480,
               minHeight: 320,
               transform: 'translate(-50%, -50%)',
-              background: 'rgba(0,0,0,0.7)',
+              background: 'rgba(0,0,0,0.9)',
               borderRadius: 16,
               zIndex: 100,
               display: 'flex',
@@ -863,8 +1076,8 @@ export default function Game() {
                 boxSizing: 'border-box',
               }}
             />
-                  <input
-                    type="text"
+            <input
+              type="text"
               value={form.link}
               onChange={e => setForm(f => ({ ...f, link: e.target.value }))}
               placeholder="新聞連結（選填）"
@@ -880,7 +1093,8 @@ export default function Game() {
                 boxSizing: 'border-box',
               }}
             />
-            <textarea
+            {/* 新增：原始內容 textarea 可編輯 */}
+                  <textarea
               value={form.content}
               onChange={e => setForm(f => ({ ...f, content: e.target.value }))}
               placeholder="新聞內文"
@@ -898,15 +1112,34 @@ export default function Game() {
                 boxSizing: 'border-box',
               }}
             />
-            <div style={{ display: 'flex', gap: 16, width: '100%', justifyContent: 'center' }}>
+            {/* AI潤飾按鈕移到這裡 */}
+            <button
+              onClick={() => setShowPolishStyleInput(true)}
+              disabled={isPolishing}
+              style={{
+                marginBottom: 8,
+                background: isPolishing ? '#888' : '#2196f3',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                padding: '10px 24px',
+                fontSize: 18,
+                fontWeight: 600,
+                cursor: isPolishing ? 'not-allowed' : 'pointer',
+                width: '100%'
+              }}
+            >
+              {isPolishing ? 'AI潤飾中...' : 'AI潤飾'}
+            </button>
+            <div style={{ display: 'flex', gap: 16, width: '100%', justifyContent: 'center', marginTop: 16 }}>
               <motion.button
                 whileHover={{ scale: 1.08 }}
                 whileTap={{ scale: 0.95 }}
                 style={{
                   width: 120,
                   height: 40,
-                  background: '#fff',
-                  color: '#222',
+                  background: '#2196f3',
+                  color: '#fff',
                   border: 'none',
                   borderRadius: 8,
                   fontSize: 20,
@@ -915,11 +1148,14 @@ export default function Game() {
                   alignItems: 'center',
                   justifyContent: 'center',
                   textAlign: 'center',
+                  fontWeight: 600
                 }}
-                onClick={() => handleSubmit(showInput!)}
-                disabled={!form.title.trim() || !form.content.trim()}
+                onClick={() => {
+                  setShowConfirmModal(false);
+                  setTimeout(() => handleSubmit(showInput!), 0);
+                }}
               >
-                送出
+                發佈
               </motion.button>
               <motion.button
                 whileHover={{ scale: 1.08 }}
@@ -940,14 +1176,57 @@ export default function Game() {
                 }}
                 onClick={() => {
                   setShowInput(null);
-                  setForm({ title: '', link: '', content: '' });
+                  setForm({ title: '', link: '', content: '', style: '' });
                 }}
               >
                 取消
               </motion.button>
+                </div>
+            {/* AI潤飾風格輸入 Modal */}
+            {showPolishStyleInput && (
+              <div style={{
+                position: 'fixed', left: 0, top: 0, width: '100vw', height: '100vh',
+                background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center'
+              }}>
+                <div style={{
+                  background: '#222', borderRadius: 12, padding: 32, minWidth: 340, color: '#fff', boxShadow: '0 2px 16px #0008'
+                }}>
+                  <div style={{ fontWeight: 700, marginBottom: 12 }}>你想要的風格</div>
+                  <input
+                    type="text"
+                    value={polishStyle}
+                    onChange={e => setPolishStyle(e.target.value)}
+                    placeholder="例如：像金庸一樣撰寫"
+                    style={{
+                      width: '100%', fontSize: 16, padding: '10px 14px', borderRadius: 8,
+                      border: '1px solid #fff', marginBottom: 16, color: '#fff', background: 'rgba(255,255,255,0.1)'
+                    }}
+                  />
+                  <div style={{ display: 'flex', gap: 16, justifyContent: 'center' }}>
+                  <button
+                      onClick={async () => {
+                        setShowPolishStyleInput(false);
+                        await handlePolishContent(polishStyle);
+                        setPolishStyle('');
+                      }}
+                      style={{
+                        background: '#2196f3', color: '#fff', border: 'none', borderRadius: 8,
+                        padding: '10px 24px', fontSize: 18, fontWeight: 600, cursor: 'pointer'
+                      }}
+                    >確認</button>
+                  <button
+                      onClick={() => setShowPolishStyleInput(false)}
+                      style={{
+                        background: '#bbb', color: '#222', border: 'none', borderRadius: 8,
+                        padding: '10px 24px', fontSize: 18, fontWeight: 600, cursor: 'pointer'
+                      }}
+                    >取消</button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        )}
         {/* 中央偏上：本回合新聞內容 */}
         <div
           style={{
@@ -971,6 +1250,9 @@ export default function Game() {
             <div style={{ fontSize: 18, marginBottom: 16 }}>{news.content}</div>
             <div style={{ fontSize: 14, color: '#ccc' }}>
               發布者: {news.author} | 時間: {news.published_date}
+            </div>
+            <div style={{ fontSize: 15, color: '#90caf9', marginTop: 8 }}>
+              觸及人數：{gameState?.reach_count ?? 0} 人
             </div>
           </>
         </div>
@@ -1005,8 +1287,8 @@ export default function Game() {
                 style={{
                   width: 120,
                   height: 40,
-                  background: '#fff',
-                  color: '#222',
+                  background: '#2196f3',
+                  color: '#fff',
                   border: 'none',
                   borderRadius: 8,
                   fontSize: 20,
@@ -1015,6 +1297,7 @@ export default function Game() {
                   alignItems: 'center',
                   justifyContent: 'center',
                   textAlign: 'center',
+                  fontWeight: 600
                 }}
                 onClick={() => {
                   setShowIgnoreConfirm(false);
@@ -1044,9 +1327,68 @@ export default function Game() {
               >
                 取消
               </motion.button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+        {/* 玩家行動結果彈窗 */}
+        {showPlayerResult && playerResultData && (
+          <div
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+              background: 'rgba(30,30,40,0.98)',
+              borderRadius: 16,
+              zIndex: 3000,
+              padding: 40,
+              minWidth: 420,
+              color: '#fff',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+              textAlign: 'center',
+            }}
+          >
+            <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 18 }}>你的行動結果</div>
+            {playerResultData.trustDiff && (
+              <div style={{ marginBottom: 18 }}>
+                <div style={{ fontWeight: 600, marginBottom: 8 }}>信任值變化</div>
+                {playerResultData.trustDiff.map((d: any, i: number) => (
+                  <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>
+                    <span style={{ width: 90, display: 'inline-block', color: '#fff', textAlign: 'left', fontVariantNumeric: 'tabular-nums' }}>{d.platform}：</span>
+                    <span style={{ color: d.player > 0 ? '#4caf50' : d.player < 0 ? '#e57373' : '#fff' }}>
+                      你 {d.player > 0 ? `+${d.player}` : d.player}
+                    </span>
+                    <span style={{ color: d.ai > 0 ? '#4caf50' : d.ai < 0 ? '#e57373' : '#fff', marginLeft: 8 }}>
+                      AI {d.ai > 0 ? `+${d.ai}` : d.ai}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ fontWeight: 600, marginBottom: 18 }}>觸及人數：{playerResultData.reachCount} 人</div>
+                  <button
+              onClick={() => {
+                setShowPlayerResult(false);
+                setPlayerResultData(null);
+                handleNextRoundAsync();
+              }}
+              style={{
+                marginTop: 12,
+                background: '#2196f3',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                padding: '10px 32px',
+                fontSize: 20,
+                fontWeight: 700,
+                cursor: 'pointer',
+                width: '60%'
+              }}
+            >
+              確認
+                  </button>
+                </div>
+        )}
         {/* 全畫面 loading 動畫，疊在所有內容之上 */}
         {isActionLoading && (
           <div
@@ -1061,6 +1403,7 @@ export default function Game() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
+              flexDirection: 'column'
             }}
           >
             <video
@@ -1071,8 +1414,222 @@ export default function Game() {
               playsInline
               style={{ width: 360, height: 360, objectFit: 'contain', background: 'transparent' }}
             />
-          </div>
+            {loadingType === 'ai' && (
+              <div style={{ color: '#fff', fontSize: 22, marginTop: 24, fontWeight: 600 }}>
+                Inforia Labs 正在思考下一步...請稍候
+              </div>
+            )}
+            </div>
         )}
+        {/* Dashboard 面板 */}
+        {showDashboard && (
+          <div
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+              background: 'rgba(30,30,40,0.98)',
+              borderRadius: 16,
+              zIndex: 2000,
+              padding: 32,
+              minWidth: 600,
+              minHeight: 400,
+              color: '#fff',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+              maxHeight: '80vh',
+              overflowY: 'auto',
+            }}
+          >
+            <div style={{ fontSize: 26, fontWeight: 800, marginBottom: 24, letterSpacing: 2, textAlign: 'center' }}>
+              玩家 Dashboard
+          </div>
+            {/* 本回合資訊 */}
+            <div style={{
+              background: 'rgba(0,123,255,0.10)',
+              borderRadius: 12,
+              padding: 20,
+              marginBottom: 24,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.10)'
+            }}>
+              <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>本回合資訊</div>
+              <div>回合數：{gameState.round_number}</div>
+              <div>新聞標題：{gameState.article?.title}</div>
+              <div>觸及人數：{gameState?.reach_count ?? 0} 人</div>
+        </div>
+            {/* 社群反應 */}
+            <div style={{
+              background: 'rgba(255,193,7,0.10)',
+              borderRadius: 12,
+              padding: 20,
+              marginBottom: 24,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.10)'
+            }}>
+              <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>社群反應</div>
+              {gameState.simulated_comments && gameState.simulated_comments.length > 0 ? (
+                <ul style={{ paddingLeft: 20 }}>
+                  {gameState.simulated_comments.map((r: string, i: number) => (
+                    <li key={i} style={{ marginBottom: 4 }}>{r}</li>
+                  ))}
+                </ul>
+              ) : (
+                <div style={{ color: '#aaa' }}>本回合尚無社群反應</div>
+              )}
+          </div>
+            {/* 平台信任值 */}
+            <div style={{
+              background: 'rgba(76,175,80,0.10)',
+              borderRadius: 12,
+              padding: 20,
+              marginBottom: 24,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.10)'
+            }}>
+              <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>平台信任值</div>
+              <table style={{ width: '100%', color: '#fff', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #fff2' }}>
+                    <th style={{ textAlign: 'left', padding: 6 }}>平台</th>
+                    <th style={{ textAlign: 'center', padding: 6 }}>你</th>
+                    <th style={{ textAlign: 'center', padding: 6 }}>Inforia Labs</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {gameState.platform_status?.map((p: any, i: number) => (
+                    <tr key={i}>
+                      <td style={{ padding: 6 }}>{p.platform_name}</td>
+                      <td style={{ textAlign: 'center', padding: 6 }}>{p.player_trust}</td>
+                      <td style={{ textAlign: 'center', padding: 6 }}>{p.ai_trust}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {/* 顯示 AI 行動造成的信任值變化 */}
+            {aiActionTrustDiff && (
+              <div style={{
+                marginTop: 12,
+                background: 'rgba(255,193,7,0.12)',
+                borderRadius: 8,
+                padding: '10px 12px',
+                fontSize: 15,
+                color: '#ffb300',
+                fontWeight: 600,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.10)',
+                transition: 'opacity 0.3s',
+                pointerEvents: 'none',
+              }}>
+                <div style={{ fontWeight: 700, color: '#fff', marginBottom: 4 }}>Inforia Labs 行動造成的影響</div>
+                {aiActionTrustDiff.map((d, i) => {
+                  const prev = roundHistory[i - 1];
+                  const prevP = prev?.platform_trust?.find((x: any) => x.platform === d.platform);
+                  const playerDiff = d.player - (prevP ? prevP.player_trust : 50);
+                  const aiDiff = d.ai - (prevP ? prevP.ai_trust : 50);
+                  return (
+                    <div key={d.platform} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <span style={{ width: 90, display: 'inline-block', color: '#fff', textAlign: 'left', fontVariantNumeric: 'tabular-nums' }}>{d.platform}：</span>
+                      <span style={{ color: playerDiff > 0 ? '#4caf50' : playerDiff < 0 ? '#e57373' : '#fff' }}>
+                        你 {playerDiff > 0 ? `+${playerDiff}` : playerDiff}
+                      </span>
+                      <span style={{ color: aiDiff > 0 ? '#4caf50' : aiDiff < 0 ? '#e57373' : '#fff', marginLeft: 8 }}>
+                        AI {aiDiff > 0 ? `+${aiDiff}` : aiDiff}
+                      </span>
+                    </div>
+                  );
+                })}
+        </div>
+      )}
+            {/* 回合歷史 */}
+            <div style={{
+              background: 'rgba(33,150,243,0.10)',
+              borderRadius: 12,
+              padding: 20,
+              marginBottom: 24,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.10)'
+            }}>
+              <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>回合歷史</div>
+              {roundHistory.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                  {roundHistory.map((r, i) => {
+                    const prev = roundHistory[i - 1];
+                    const isAI = r.actor === 'ai';
+                    return (
+                      <div key={i} style={{
+                        background: 'rgba(255,255,255,0.06)',
+                        borderRadius: 10,
+                        padding: '16px 18px',
+                        marginBottom: 16,
+                        boxShadow: '0 1px 4px rgba(0,0,0,0.08)'
+                      }}>
+                        <div style={{ fontWeight: 700, color: '#2196f3', marginBottom: 4 }}>第 {r.round_number} 回合</div>
+                        {isAI ? (
+                          <>
+                            <div style={{ fontWeight: 700, color: '#ffb300', marginBottom: 4 }}>Inforia Labs 行動</div>
+                            <div style={{ marginLeft: 12, fontSize: 15, color: '#90caf9', marginBottom: 2 }}>
+                              發布新聞標題：{r.news_title}
+                            </div>
+                            <div style={{ marginLeft: 12, marginBottom: 2, color: '#fff', whiteSpace: 'pre-line' }}>
+                              {r.ai_action || '—'}
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div style={{ fontWeight: 700, color: '#4caf50', marginBottom: 4 }}>玩家行動</div>
+                            <div style={{ marginLeft: 12, fontSize: 15, color: '#90caf9', marginBottom: 2 }}>
+                              使用了{r.player_action || '—'}
+                            </div>
+                            <div style={{ marginLeft: 12, fontSize: 15, color: '#90caf9', marginBottom: 2 }}>
+                              發布新聞標題：{r.news_title}
+                            </div>
+                            {!['ignore', '忽略'].includes(r.player_action) && (
+                              <div style={{ marginLeft: 12, marginBottom: 2, color: '#fff', whiteSpace: 'pre-line' }}>
+                                {r.player_content || '—'}
+                              </div>
+                            )}
+                          </>
+                        )}
+                        <div style={{ marginLeft: 12, fontSize: 15, color: '#fff', marginBottom: 2 }}>
+                          觸及人數：{r.reach_count ?? '—'}
+                        </div>
+                        <div style={{ marginLeft: 12, fontSize: 15, color: '#fff', marginBottom: 2 }}>
+                          造成各平台信任值影響：
+                          {r.platform_trust?.map((p: any) => {
+                            const prevP = prev?.platform_trust?.find((x: any) => x.platform === p.platform);
+                            const playerDiff = p.player_trust - (prevP ? prevP.player_trust : 50);
+                            const aiDiff = p.ai_trust - (prevP ? prevP.ai_trust : 50);
+                            return (
+                              <div key={p.platform} style={{ marginLeft: 8 }}>
+                                {p.platform}：你 {p.player_trust} ({playerDiff >= 0 ? `+${playerDiff}` : playerDiff}) / AI {p.ai_trust} ({aiDiff >= 0 ? `+${aiDiff}` : aiDiff})
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={{ color: '#aaa' }}>尚無回合紀錄</div>
+              )}
+            </div>
+        <button
+              onClick={() => setShowDashboard(false)}
+              style={{
+                marginTop: 24,
+                background: '#2196f3',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                padding: '10px 24px',
+                fontSize: 18,
+                fontWeight: 600,
+                cursor: 'pointer',
+                width: '100%'
+              }}
+            >
+              關閉
+        </button>
+          </div>
+      )}
       </div>
     </div>
   );
