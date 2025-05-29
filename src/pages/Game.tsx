@@ -68,6 +68,10 @@ export default function Game() {
 
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
+  // 新增：AI行動結果彈窗狀態
+  const [showAiResult, setShowAiResult] = useState(false);
+  const [aiResultData, setAiResultData] = useState<any>(null);
+
   useEffect(() => {
     const updateScale = () => {
       const scaleX = window.innerWidth / 1440;
@@ -434,6 +438,28 @@ export default function Game() {
           })) || [],
         }
       ]);
+      // 新增：計算AI行動造成的信任值變化，顯示彈窗
+      let trustDiff = null;
+      if (nextRoundData.platform_status) {
+        const prevPlatforms = (gameState?.platform_status || []).map((p: any) => ({
+          platform_name: p.platform_name,
+          player_trust: p.player_trust,
+          ai_trust: p.ai_trust,
+        }));
+        trustDiff = nextRoundData.platform_status.map((p: any) => {
+          const prev = prevPlatforms.find((x: any) => x.platform_name === p.platform_name);
+          return {
+            platform: p.platform_name,
+            player: prev ? p.player_trust - prev.player_trust : 0,
+            ai: prev ? p.ai_trust - prev.ai_trust : 0,
+          };
+        });
+      }
+      setAiResultData({
+        trustDiff,
+        reachCount: nextRoundData.reach_count ?? 0,
+      });
+      setShowAiResult(true);
     } catch (err) {
       alert('回合轉換失敗，請稍後再試');
       setAiActionPending(false);
@@ -500,6 +526,21 @@ export default function Game() {
           })),
         }
       ]);
+      // 顯示第一回合AI行動結果彈窗
+      let trustDiff = null;
+      if (gameState.platform_status) {
+        // 沒有前一回合，預設前值50
+        trustDiff = gameState.platform_status.map((p: any) => ({
+          platform: p.platform_name,
+          player: p.player_trust - 50,
+          ai: p.ai_trust - 50,
+        }));
+      }
+      setAiResultData({
+        trustDiff,
+        reachCount: gameState.reach_count ?? 0,
+      });
+      setShowAiResult(true);
     }
   }, [gameState]);
 
@@ -1389,6 +1430,66 @@ export default function Game() {
                   </button>
                 </div>
         )}
+        {/* Inforia Labs 行動結果彈窗 */}
+        {showAiResult && aiResultData && (
+          <div
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+              background: 'rgba(30,30,40,0.98)',
+              borderRadius: 16,
+              zIndex: 3000,
+              padding: 40,
+              minWidth: 420,
+              color: '#fff',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+              textAlign: 'center',
+            }}
+          >
+            <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 18 }}>Inforia Labs發布了一則新聞</div>
+            <div style={{ fontSize: 18, color: '#90caf9', marginBottom: 18 }}>標題：{gameState?.article?.title || ''}</div>
+            <div style={{ fontWeight: 600, marginBottom: 8 }}>觸及人數：{aiResultData.reachCount} 人</div>
+            {aiResultData.trustDiff && (
+              <div style={{ marginBottom: 18 }}>
+                <div style={{ fontWeight: 600, marginBottom: 8 }}>信任值變化</div>
+                {aiResultData.trustDiff.map((d: any, i: number) => (
+                  <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>
+                    <span style={{ width: 90, display: 'inline-block', color: '#fff', textAlign: 'left', fontVariantNumeric: 'tabular-nums' }}>{d.platform}：</span>
+                    <span style={{ color: d.player > 0 ? '#4caf50' : d.player < 0 ? '#e57373' : '#fff' }}>
+                      你 {d.player > 0 ? `+${d.player}` : d.player}
+                    </span>
+                    <span style={{ color: d.ai > 0 ? '#4caf50' : d.ai < 0 ? '#e57373' : '#fff', marginLeft: 8 }}>
+                      Inforia Labs {d.ai > 0 ? `+${d.ai}` : d.ai}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ fontSize: 18, color: '#fff', margin: '24px 0 0 0', fontWeight: 700 }}>你要怎麼回應呢？</div>
+            <button
+              onClick={() => {
+                setShowAiResult(false);
+                setAiResultData(null);
+              }}
+              style={{
+                marginTop: 20,
+                background: '#2196f3',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                padding: '10px 32px',
+                fontSize: 20,
+                fontWeight: 700,
+                cursor: 'pointer',
+                width: '60%'
+              }}
+            >
+              確認
+            </button>
+          </div>
+        )}
         {/* 全畫面 loading 動畫，疊在所有內容之上 */}
         {isActionLoading && (
           <div
@@ -1564,44 +1665,59 @@ export default function Game() {
                         {isAI ? (
                           <>
                             <div style={{ fontWeight: 700, color: '#ffb300', marginBottom: 4 }}>Inforia Labs 行動</div>
-                            <div style={{ marginLeft: 12, fontSize: 15, color: '#90caf9', marginBottom: 2 }}>
+                            <div style={{ marginLeft: 12, fontSize: 15, color: '#90caf9', marginBottom: 16 }}>
                               發布新聞標題：{r.news_title}
                             </div>
-                            <div style={{ marginLeft: 12, marginBottom: 2, color: '#fff', whiteSpace: 'pre-line' }}>
+                            <div style={{ marginLeft: 12, marginBottom: 16, color: '#fff', whiteSpace: 'pre-line' }}>
                               {r.ai_action || '—'}
                             </div>
                           </>
                         ) : (
                           <>
                             <div style={{ fontWeight: 700, color: '#4caf50', marginBottom: 4 }}>玩家行動</div>
-                            <div style={{ marginLeft: 12, fontSize: 15, color: '#90caf9', marginBottom: 2 }}>
+                            <div style={{ marginLeft: 12, fontSize: 15, color: '#90caf9', marginBottom: 16 }}>
                               使用了{r.player_action || '—'}
                             </div>
-                            <div style={{ marginLeft: 12, fontSize: 15, color: '#90caf9', marginBottom: 2 }}>
-                              發布新聞標題：{r.news_title}
-                            </div>
                             {!['ignore', '忽略'].includes(r.player_action) && (
-                              <div style={{ marginLeft: 12, marginBottom: 2, color: '#fff', whiteSpace: 'pre-line' }}>
-                                {r.player_content || '—'}
-                              </div>
+                              <>
+                                <div style={{ marginLeft: 12, fontSize: 15, color: '#90caf9', marginBottom: 16 }}>
+                                  發布新聞標題：{r.news_title}
+                                </div>
+                                <div style={{ marginLeft: 12, marginBottom: 16, color: '#fff', whiteSpace: 'pre-line' }}>
+                                  {r.player_content || '—'}
+                                </div>
+                              </>
                             )}
                           </>
                         )}
-                        <div style={{ marginLeft: 12, fontSize: 15, color: '#fff', marginBottom: 2 }}>
+                        <div style={{ marginLeft: 12, fontSize: 15, color: '#90caf9', marginBottom: 2 }}>
                           觸及人數：{r.reach_count ?? '—'}
                         </div>
-                        <div style={{ marginLeft: 12, fontSize: 15, color: '#fff', marginBottom: 2 }}>
+                        <div style={{ marginLeft: 12, fontSize: 15, color: '#90caf9', marginBottom: 2 }}>
                           造成各平台信任值影響：
-                          {r.platform_trust?.map((p: any) => {
-                            const prevP = prev?.platform_trust?.find((x: any) => x.platform === p.platform);
-                            const playerDiff = p.player_trust - (prevP ? prevP.player_trust : 50);
-                            const aiDiff = p.ai_trust - (prevP ? prevP.ai_trust : 50);
-                            return (
-                              <div key={p.platform} style={{ marginLeft: 8 }}>
-                                {p.platform}：你 {p.player_trust} ({playerDiff >= 0 ? `+${playerDiff}` : playerDiff}) / AI {p.ai_trust} ({aiDiff >= 0 ? `+${aiDiff}` : aiDiff})
-                              </div>
-                            );
-                          })}
+                          <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 8 }}>
+                            <thead>
+                              <tr>
+                                <th style={{ textAlign: 'left', padding: 6 }}>平台</th>
+                                <th style={{ textAlign: 'center', padding: 6 }}>你</th>
+                                <th style={{ textAlign: 'center', padding: 6 }}>Inforia Labs</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {r.platform_trust?.map((p: any) => {
+                                const prevP = prev?.platform_trust?.find((x: any) => x.platform === p.platform);
+                                const playerDiff = p.player_trust - (prevP ? prevP.player_trust : 50);
+                                const aiDiff = p.ai_trust - (prevP ? prevP.ai_trust : 50);
+                                return (
+                                  <tr key={p.platform}>
+                                    <td style={{ padding: 6 }}>{p.platform}</td>
+                                    <td style={{ textAlign: 'center', padding: 6 }}>{p.player_trust} ({playerDiff >= 0 ? `+${playerDiff}` : playerDiff})</td>
+                                    <td style={{ textAlign: 'center', padding: 6 }}>{p.ai_trust} ({aiDiff >= 0 ? `+${aiDiff}` : aiDiff})</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
                         </div>
                       </div>
                     );
