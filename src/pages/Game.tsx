@@ -1458,21 +1458,28 @@ export default function Game() {
           >
             <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 18 }}>Inforia Labs發布了一則新聞</div>
             <div style={{ fontSize: 18, color: '#90caf9', marginBottom: 18 }}>標題：{gameState?.article?.title || ''}</div>
-            <div style={{ fontWeight: 600, marginBottom: 8 }}>觸及人數：{aiResultData.reachCount} 人</div>
+            <div style={{ fontWeight: 600, marginBottom: 24 }}>觸及人數：{aiResultData.reachCount} 人</div>
             {aiResultData.trustDiff && (
               <div style={{ marginBottom: 18 }}>
                 <div style={{ fontWeight: 600, marginBottom: 8 }}>信任值變化</div>
-                {aiResultData.trustDiff.map((d: any, i: number) => (
-                  <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>
-                    <span style={{ width: 90, display: 'inline-block', color: '#fff', textAlign: 'left', fontVariantNumeric: 'tabular-nums' }}>{d.platform}：</span>
-                    <span style={{ color: d.player > 0 ? '#4caf50' : d.player < 0 ? '#e57373' : '#fff' }}>
-                      你 {d.player > 0 ? `+${d.player}` : d.player}
-                    </span>
-                    <span style={{ color: d.ai > 0 ? '#4caf50' : d.ai < 0 ? '#e57373' : '#fff', marginLeft: 8 }}>
-                      Inforia Labs {d.ai > 0 ? `+${d.ai}` : d.ai}
-                    </span>
-                  </div>
-                ))}
+                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 8 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'center', padding: 6 }}>平台</th>
+                      <th style={{ textAlign: 'center', padding: 6 }}>你</th>
+                      <th style={{ textAlign: 'center', padding: 6 }}>Inforia Labs</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {aiResultData.trustDiff.map((d: any, i: number) => (
+                      <tr key={i}>
+                        <td style={{ textAlign: 'center', padding: 6 }}>{d.platform}</td>
+                        <td style={{ textAlign: 'center', padding: 6, color: d.player > 0 ? '#4caf50' : d.player < 0 ? '#e57373' : '#fff' }}>{d.player > 0 ? `+${d.player}` : d.player}</td>
+                        <td style={{ textAlign: 'center', padding: 6, color: d.ai > 0 ? '#4caf50' : d.ai < 0 ? '#e57373' : '#fff' }}>{d.ai > 0 ? `+${d.ai}` : d.ai}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
             <div style={{ fontSize: 18, color: '#fff', margin: '24px 0 0 0', fontWeight: 700 }}>你要怎麼回應呢？</div>
