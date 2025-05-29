@@ -1298,7 +1298,7 @@ export default function Game() {
             <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 12 }}>{news.title}</div>
             <div style={{ fontSize: 18, marginBottom: 16 }}>{news.content}</div>
             <div style={{ fontSize: 14, color: '#ccc' }}>
-              發布者: {news.author} | 時間: {news.published_date}
+              發布者: {news.author === 'ai' ? 'Inforia Labs' : news.author} | 時間: {news.published_date}
             </div>
             <div style={{ fontSize: 15, color: '#90caf9', marginTop: 8 }}>
               觸及人數：{gameState?.reach_count ?? 0} 人
@@ -1476,7 +1476,7 @@ export default function Game() {
               </div>
             )}
             <div style={{ fontSize: 18, color: '#fff', margin: '24px 0 0 0', fontWeight: 700 }}>你要怎麼回應呢？</div>
-            <button
+                  <button
               onClick={() => {
                 setShowAiResult(false);
                 setAiResultData(null);
@@ -1495,8 +1495,8 @@ export default function Game() {
               }}
             >
               確認
-            </button>
-          </div>
+                  </button>
+                </div>
         )}
         {/* 全畫面 loading 動畫，疊在所有內容之上 */}
         {isActionLoading && (
