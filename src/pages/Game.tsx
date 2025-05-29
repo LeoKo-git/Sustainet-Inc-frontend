@@ -1223,6 +1223,57 @@ export default function Game() {
                 </div>
               </div>
             )}
+            <div style={{ display: 'flex', gap: 16, width: '100%', justifyContent: 'center', marginTop: 16 }}>
+              <motion.button
+                whileHover={{ scale: 1.08 }}
+                whileTap={{ scale: 0.95 }}
+                style={{
+                  width: 120,
+                  height: 40,
+                  background: '#2196f3',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 8,
+                  fontSize: 20,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  textAlign: 'center',
+                  fontWeight: 600
+                }}
+                onClick={() => {
+                  setShowConfirmModal(false);
+                  setTimeout(() => handleSubmit(showInput!), 0);
+                }}
+              >
+                發佈
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.08 }}
+                whileTap={{ scale: 0.95 }}
+                style={{
+                  width: 120,
+                  height: 40,
+                  background: '#bbb',
+                  color: '#222',
+                  border: 'none',
+                  borderRadius: 8,
+                  fontSize: 20,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  textAlign: 'center',
+                }}
+                onClick={() => {
+                  setShowInput(null);
+                  setForm({ title: '', link: '', content: '', style: '' });
+                }}
+              >
+                取消
+              </motion.button>
+            </div>
           </div>
         )}
         {/* 中央偏上：本回合新聞內容 */}
