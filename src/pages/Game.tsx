@@ -951,8 +951,8 @@ export default function Game() {
                   style={{
                     position: 'absolute',
                     right: '100%',
-                    top: '50%',
-                    transform: 'translateY(-50%)',
+                    bottom: '100%',
+                    marginBottom: 12,
                     background: 'rgba(30,30,40,0.98)',
                     color: '#fff',
                     borderRadius: 8,
